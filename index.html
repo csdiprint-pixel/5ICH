@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大型教室線上即時選位與核實系統</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        :root {
+            --border-color: #707070;
+            --booked-bg: #e8f4f8;
+            --booked-text: #2c3e50;
+            --my-seat-bg: #d4edda;
+            --my-seat-text: #155724;
+            --my-seat-border: #28a745;
+            --status-match: #d4edda;
+            --status-mismatch: #f8d7da;
+            --primary-blue: #2980b9;
+        }
+
+        body { font-family: "Microsoft JhengHei", Arial, sans-serif; background-color: #f8f9fa; margin: 0; padding: 10px; color: #000; font-size: 20px; }
+
+        /* 導覽列 */
+        .nav-bar { display: flex; justify-content: space-between; background: #2c3e50; padding: 12px 8px; margin: -10px -10px 15px -10px; align-items: center; }
+        .nav-bar span { color: white; font-weight: bold; font-size: 18px; padding-left: 5px; }
+        .nav-btn { background: #34495e; color: white; border: 1px solid #455a64; padding: 6px 12px; cursor: pointer; font-size: 15px; border-radius: 6px; font-weight: bold;}
+
+        .page { display: none; }
+        .page.active { display: block; }
+
+        .main-container { max-width: 100%; margin: 0 auto; background: #fff; padding: 25px 10px; box-sizing: border-box; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+        .class-info-header { text-align: center; font-size: 25px; font-weight: bold; margin-bottom: 20px; color: #111; word-break: break-all; line-height: 1.4;}
+
+        /* 迎賓分區選擇頁面 */
+        .zone-landing { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 10px; }
+        .zone-landing h2 { font-size: 28px; color: #2c3e50; margin-bottom: 30px; text-align: center; }
+        .big-zone-btn { width: 100%; max-width: 320px; padding: 25px 20px; font-size: 24px; margin-bottom: 20px; border-radius: 12px; border: 3px solid var(--primary-blue); background: #fdfefe; cursor: pointer; font-weight: bold; color: var(--primary-blue); box-shadow: 0 4px 10px rgba(41,128,185,0.15); transition: 0.2s; display: flex; flex-direction: column; align-items: center; gap: 10px;}
+        .big-zone-btn:active { transform: scale(0.96); background: var(--primary-blue); color: white; }
+        .big-zone-btn span { font-size: 16px; font-weight: normal; color: #666; }
+
+        /* 分區頁籤導覽 */
+        .zone-tabs { display: none; justify-content: center; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+        .zone-tab { padding: 10px 15px; font-size: 18px; cursor: pointer; border: 2px solid var(--primary-blue); background: #fff; color: var(--primary-blue); border-radius: 6px; font-weight: bold; flex: 1; min-width: 100px; max-width: 150px; text-align: center; }
+        .zone-tab.active { background: var(--primary-blue); color: #fff; }
+
+        /* 教室網格與包裝 */
+        .classroom-grid { display: block; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding-bottom: 30px; width: 100%; text-align: center; white-space: nowrap; }
+        .grid-wrapper { display: inline-block; position: relative; text-align: center; min-width: 100%; }
+        
+        .stage-area { display: flex; justify-content: center; align-items: center; margin: 15px auto 30px auto; }
+        .stage-box { border: 2px solid var(--border-color); padding: 12px 40px; font-size: 22px; font-weight: bold; background: #f2f2f2; border-radius: 4px; }
+
+        /* 座位表 */
+        .seat-table { border-collapse: separate; border-spacing: 6px 8px; margin: 0 auto; }
+        .seat-table td { border: 2px solid var(--border-color); text-align: center; vertical-align: middle; width: 110px; min-width: 110px; height: 80px; font-size: 22px; font-weight: bold; background-color: #fff; cursor: pointer; border-radius: 6px; line-height: 1.3; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 0; box-sizing: border-box; }
+        .seat-table td.booked { background-color: var(--booked-bg); color: var(--booked-text); border-color: #8aa4b7; }
+        .seat-table td.my-seat { background-color: var(--my-seat-bg) !important; color: var(--my-seat-text) !important; border: 3px solid var(--my-seat-border) !important; box-shadow: 0 0 8px rgba(40,167,69,0.5); font-size: 24px; }
+        .seat-table td.verified-match { background-color: var(--status-match) !important; color: #155724 !important; border-color: #c3e6cb; }
+        .seat-table td.verified-error { background-color: var(--status-mismatch) !important; color: #721c24 !important; border-color: #f5c6cb; }
+        
+        .seat-table td.aisle { width: 15px !important; min-width: 15px !important; background-color: #e2e8f0; border: none !important; cursor: default; box-shadow: inset 0 0 4px rgba(0,0,0,0.05) !important; border-radius: 2px !important; }
+
+        .scroll-hint { text-align: center; font-size: 18px; color: #e67e22; margin-bottom: 15px; font-weight: bold; display: none; }
+
+        /* 彈出視窗 */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); justify-content: center; align-items: center; z-index: 9999; }
+        .modal-body { background: #fff; padding: 25px; border-radius: 12px; width: 85%; max-width: 380px; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+        .modal-body h3 { font-size: 28px; margin-bottom: 15px; color: #333; }
+        .modal-body input { width: 100%; padding: 12px; margin: 15px 0; font-size: 20px; border: 2px solid #ccc; border-radius: 6px; text-align: center; box-sizing: border-box; }
+        .modal-btns { display: flex; justify-content: space-around; margin-top: 20px; gap: 10px; }
+        .btn { padding: 12px 15px; border: 1px solid #707070; background: #f2f2f2; cursor: pointer; font-size: 18px; border-radius: 6px; flex: 1; font-weight: bold; }
+        .btn-ok { background: #d4edda; color: #155724; border-color: #c3e6cb; }
+        .btn-clear { background: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+        .modal-notice-box { background: #fff9f9; border: 1px solid #ffcccc; border-radius: 6px; padding: 12px; margin: 15px 0; text-align: left; font-size: 16px; color: #cc0000; line-height: 1.5; font-weight: bold; }
+
+        /* 後台樣式 */
+        .admin-box { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); max-width: 900px; margin: 0 auto; }
+        .admin-box h3 { margin-top: 0; color: #2c3e50; border-left: 6px solid #2980b9; padding-left: 12px; font-size: 22px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; font-weight: bold; font-size: 18px; margin-bottom: 10px; color: #333; }
+        .form-group textarea { width: 100%; padding: 15px; box-sizing: border-box; border: 2px solid #ccc; border-radius: 6px; font-size: 18px; resize: vertical; }
+        
+        .btn-admin-act { width: 100%; padding: 15px; font-size: 18px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; color: white; margin-bottom: 15px; }
+        .btn-blue { background-color: #2980b9; }
+        .btn-orange { background-color: #e67e22; }
+        .btn-gray { background-color: #7f8c8d; }
+        .btn-purple { background-color: #8e44ad; }
+        .btn-green { background-color: #27ae60; }
+        .btn-red { background-color: #c0392b; }
+        
+        .report-box { background: #fdfefe; border: 2px solid #ddd; padding: 15px; border-radius: 6px; font-size: 16px; margin-top: 20px; line-height: 1.8; display: none; }
+        .admin-modification-box { background: #f4f6f7; border: 1px solid #d5dbdb; padding: 20px; border-radius: 6px; margin-top: 30px; }
+        .pwd-section { margin-top: 30px; padding-top: 20px; border-top: 2px dashed #ccc; }
+
+        .seat-num { font-size: 28px !important; font-weight: 900; line-height: 1; display: inline-block; margin-bottom: 2px; }
+        .seat-num-empty { font-size: 28px !important; font-weight: 900; line-height: 1; display: inline-block; color: #555; }
+        .seat-name { font-size: 18px !important; display: inline-block; }
+
+        @media print {
+            body { background-color: #fff; padding: 0; margin: 0; font-size: 16px; }
+            .nav-bar, #adminPage, .zone-tabs, .zone-landing, .modal-overlay, .scroll-hint { display: none !important; }
+            #studentPage, .classroom-grid { display: block !important; }
+            .main-container { box-shadow: none; padding: 0; margin: 0; }
+            .seat-table td { -webkit-print-color-adjust: exact; print-color-adjust: exact; width: 70px; height: 50px; font-size: 14px;}
+            .seat-num { font-size: 18px !important; }
+            .seat-name { font-size: 14px !important; }
+            .seat-table td.aisle { background: #e2e8f0 !important; border: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="nav-bar">
+        <span>選位系統 (大型教室)</span>
+        <button class="nav-btn" id="navToggleBtn" onclick="openLoginModal()">管理後台</button>
+    </div>
+
+    <div id="studentPage" class="page active">
+        <div class="main-container">
+            <div class="class-info-header" id="displayClassHeader">
+                大型教室線上選位表 (請由管理員自後台載入班期)
+            </div>
+
+            <div id="zoneLanding" class="zone-landing">
+                <h2>請選擇您要查看的座位區域</h2>
+                <button class="big-zone-btn" onclick="switchZone('left')">
+                    👈 左側座位區
+                    <span>(包含第 1排 ~ 第 9排)</span>
+                </button>
+                <button class="big-zone-btn" onclick="switchZone('right')">
+                    👉 右側座位區
+                    <span>(包含第 10排 ~ 第 18排)</span>
+                </button>
+            </div>
+
+            <div id="zoneGridArea" style="display: none;">
+                <div class="zone-tabs" id="zoneTabs">
+                    <div class="zone-tab" id="tab-left" onclick="switchZone('left')">左側 (1~9排)</div>
+                    <div class="zone-tab" id="tab-right" onclick="switchZone('right')">右側 (10~18排)</div>
+                    <div class="zone-tab" id="tab-all" onclick="switchZone('all')">顯示全區(1~18)</div>
+                </div>
+
+                <div class="scroll-hint" id="scrollHint">⇿ 畫面可左右滑動查看完整座位 ⇿</div>
+
+                <div class="classroom-grid">
+                    <div class="grid-wrapper">
+                        <div class="stage-area">
+                            <div class="stage-box">講台(白板)</div>
+                        </div>
+                        <table class="seat-table" id="classroomSeats"></table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div id="adminPage" class="page">
+        <div class="admin-box">
+            <h3>⚙️ 大型教室 - 系統管理後台</h3>
+            <button class="btn-admin-act btn-gray" onclick="logoutAdmin()" style="margin-bottom: 25px;">🚪 安全登出</button>
+
+            <div class="admin-modification-box" style="margin-top: 0; margin-bottom: 25px;">
+                <h4 style="margin: 0 0 15px 0; color: #2c3e50;">📂 歷史班期快速切換</h4>
+                <div id="classHistoryList" style="display: flex; gap: 10px; flex-wrap: wrap;"></div>
+            </div>
+            
+            <div class="form-group">
+                <label>【步驟一】請複製 Word 名冊內的「所有文字」並貼在下方：</label>
+                <textarea id="rawRosterInput" rows="5" placeholder="請在 Word 檔案中全選複製，貼上至此..."></textarea>
+            </div>
+
+            <button class="btn-admin-act btn-blue" onclick="processRosterText()">【步驟二】一鍵解析並啟動新班期</button>
+            
+            <div id="qrcodeWrapper" style="display: none; background: #fff; border: 2px solid #ccc; padding: 20px; margin: 20px 0; text-align:center; border-radius: 8px;">
+                <strong style="color:#2c3e50; font-size:18px;">📱 當前班期專屬 QR Code</strong>
+                <div id="qrcode" style="margin: 15px auto; display:flex; justify-content:center;"></div>
+            </div>
+
+            <button class="btn-admin-act btn-orange" onclick="verifyFilledSeats()">【步驟三】一鍵與名冊核實比對</button>
+            <button class="btn-admin-act btn-gray" onclick="clearVerificationStatus()">清除核實燈號</button>
+            <button class="btn-admin-act btn-purple" onclick="exportCurrentClassSeats()">🖨️ 列印/匯出全區座位表</button>
+            <button class="btn-admin-act btn-red" onclick="clearCurrentClassData()" style="margin-top: 20px;">🗑️ 徹底清除當前班期資料</button>
+
+            <div class="report-box" id="adminReport"></div>
+
+            <div class="admin-modification-box">
+                <h4 style="margin: 0 0 15px 0; color: #2c3e50;">✍️ 管理員人工修正面板</h4>
+                <div style="display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 100px;">
+                        <input type="text" id="modSeatId" placeholder="座位(例: 1-1)" style="width:100%; padding:10px; font-size: 16px;">
+                    </div>
+                    <div style="flex: 2; min-width: 150px;">
+                        <input type="text" id="modStudentName" placeholder="正確姓名" style="width:100%; padding:10px; font-size: 16px;">
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn-admin-act btn-green" style="margin:0;" onclick="adminForceAssignSeat()">寫入</button>
+                    <button class="btn-admin-act btn-red" style="margin:0;" onclick="adminForceClearSeat()">清除</button>
+                </div>
+            </div>
+
+            <div class="pwd-section">
+                <h4 style="margin: 0 0 20px 0; color: #7f8c8d; font-size: 20px;">🔒 雲端安全設定 (跨裝置即時同步)</h4>
+                
+                <label style="font-size: 16px; font-weight: bold; color:#555;">1. 管理者帳號白名單 (多個請用半形逗號 , 隔開)</label>
+                <div style="display:flex; gap:15px; margin-top:10px; margin-bottom: 25px;">
+                    <input type="text" id="whitelistInput" placeholder="例: admin01, admin02" style="flex:1; padding:12px; border:2px solid #ccc; border-radius:6px; font-size: 18px;">
+                    <button type="button" class="btn-admin-act btn-blue" style="width:auto; margin-bottom:0; padding: 12px 25px;" onclick="saveAccountWhitelist()">儲存名單</button>
+                </div>
+
+                <label style="font-size: 16px; font-weight: bold; color:#555;">2. 變更後台共用密碼</label>
+                <div style="display:flex; gap:15px; margin-top:10px;">
+                    <input type="password" id="newPasswordInput" placeholder="輸入新密碼" style="flex:1; padding:12px; border:2px solid #ccc; border-radius:6px; font-size: 18px;">
+                    <button type="button" class="btn-admin-act btn-green" style="width:auto; margin-bottom:0; padding: 12px 25px;" onclick="changeAdminPassword()">變更密碼</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="loginModal">
+        <div class="modal-body">
+            <h3>管理者登入</h3>
+            <form onsubmit="event.preventDefault(); submitLogin();">
+                <input type="text" id="adminAccountInput" placeholder="請輸入帳號" required>
+                <input type="password" id="adminPasswordInput" placeholder="請輸入密碼" required>
+                <div class="modal-btns">
+                    <button type="button" class="btn" onclick="closeLoginModal()">取消</button>
+                    <button type="submit" class="btn btn-ok">登入</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="seatModal">
+        <div class="modal-body">
+            <h3 id="targetSeatLabel">座位 1-1</h3>
+            <div class="modal-notice-box">請按照座位表入座，換座位記得更改。</div>
+            <p style="font-size: 18px; color: #444; font-weight:bold;" id="inputLabelText">請填寫真實姓名：</p>
+            <input type="text" id="studentName" placeholder="請輸入姓名" autocomplete="off">
+            <div class="modal-btns">
+                <button type="button" class="btn" onclick="closeSelectModal()">關閉</button>
+                <button type="button" class="btn btn-clear" id="btnCancelSeat" onclick="clearCurrentSeat()">取消</button>
+                <button type="button" class="btn btn-ok" id="btnSubmitSeat" onclick="saveStudentSeat()">確認</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const TOTAL_ROWS = 12; 
+    const TOTAL_COLS = 18; 
+
+    function escapeHTML(str) {
+        if (!str) return "";
+        return str.replace(/[&<>'"]/g, function(tag) {
+            const charsToReplace = { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' };
+            return charsToReplace[tag] || tag;
+        });
+    }
+
+    const FIREBASE_URL = "https://csdi-seating-system-default-rtdb.asia-southeast1.firebasedatabase.app";
+
+    let currentPage = "student"; 
+    let currentZone = "none"; 
+    let activeSeatId = "";      
+    let isVerifyVisualOn = false; 
+
+    let adminPassword = "18"; 
+    let currentClassID = getUrlParam("class") || ""; 
+
+    let dbTitles = JSON.parse(localStorage.getItem("seat_db_titles_large")) || {};
+    let dbRosters = JSON.parse(localStorage.getItem("seat_db_rosters_large")) || {};
+    
+    let classHeaderTitle = dbTitles[currentClassID] || "大型教室線上選位表 (請由管理員載入)";
+    let officialRoster = dbRosters[currentClassID] || [];
+    let studentFilledData = {}; 
+
+    function maskName(name) {
+        if (!name) return "";
+        if (name.length === 2) return name[0] + "Ｏ";
+        if (name.length >= 3) return name[0] + "Ｏ" + name.substring(2);
+        return name;
+    }
+
+    function getUrlParam(name) {
+        return new URLSearchParams(window.location.search).get(name);
+    }
+
+    function logoutAdmin() {
+        sessionStorage.removeItem("isAdminAuthed_large");
+        location.reload();
+    }
+
+    function switchZone(zone) {
+        currentZone = zone;
+        document.getElementById("zoneLanding").style.display = "none";
+        document.getElementById("zoneGridArea").style.display = "block";
+        document.getElementById("zoneTabs").style.display = "flex";
+
+        document.querySelectorAll('.zone-tab').forEach(t => t.classList.remove('active'));
+        document.getElementById('tab-' + zone).classList.add('active');
+
+        if (zone === 'all') {
+            document.getElementById("scrollHint").style.display = "block";
+        } else {
+            document.getElementById("scrollHint").style.display = "none";
+        }
+
+        renderSeatsGrid();
+    }
+
+    function renderClassHistory() {
+        const historyContainer = document.getElementById("classHistoryList");
+        if (!historyContainer) return;
+        historyContainer.innerHTML = "";
+        
+        const classes = Object.keys(dbTitles).filter(c => c !== "");
+        if (classes.length === 0) { historyContainer.innerHTML = "<span>尚無紀錄</span>"; return; }
+        
+        classes.forEach(cls => {
+            const btn = document.createElement("button");
+            btn.className = (cls === currentClassID) ? "btn-admin-act btn-orange" : "btn-admin-act btn-blue";
+            btn.style.width = "auto"; btn.style.padding = "8px 15px"; btn.style.margin = "0";
+            btn.innerText = "班期 " + cls;
+            btn.onclick = () => { window.location.href = `?class=${cls}`; };
+            historyContainer.appendChild(btn);
+        });
+    }
+
+    function startRealtimeSync() {
+        if (!currentClassID) return;
+        const syncUrl = `${FIREBASE_URL}/room_large/${currentClassID}/seats.json`;
+        const eventSource = new EventSource(syncUrl);
+
+        eventSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data && data.path === "/") {
+                if (data.data === null) {
+                    alert("⚠️ 此班期已被關閉！");
+                    window.location.replace(window.location.pathname);
+                    return;
+                }
+                studentFilledData = data.data || {};
+            } else if (data && data.path) {
+                const cleanKey = data.path.replace("/", "");
+                if (cleanKey) {
+                    if (data.data === null) delete studentFilledData[cleanKey];
+                    else studentFilledData[cleanKey] = data.data;
+                }
+            } else if (event.data && !data.path) {
+                studentFilledData = data || {};
+            }
+            if(currentZone !== 'none') renderSeatsGrid();
+        };
+        fetchSeatsDataLegacy();
+    }
+
+    async function fetchSeatsDataLegacy() {
+        if (!currentClassID) return;
+        try {
+            const res = await fetch(`${FIREBASE_URL}/room_large/${currentClassID}/seats.json`);
+            studentFilledData = await res.json() || {};
+            if(currentZone !== 'none') renderSeatsGrid();
+        } catch(e) {}
+    }
+
+    async function updateCloudSeat(seatId, name) {
+        if (!currentClassID) return true;
+        try {
+            let url = `${FIREBASE_URL}/room_large/${currentClassID}/seats/${seatId}.json`;
+            if (name === null) await fetch(url, { method: 'DELETE' });
+            else await fetch(url, { method: 'PUT', body: JSON.stringify(name) });
+            return true;
+        } catch (e) { return false; }
+    }
+
+    function openLoginModal() {
+        if (currentPage === "student") {
+            if (sessionStorage.getItem("isAdminAuthed_large") === "true") {
+                document.getElementById("studentPage").classList.remove("active");
+                document.getElementById("adminPage").classList.add("active");
+                document.getElementById("navToggleBtn").innerText = "返回前台";
+                currentPage = "admin";
+                renderClassHistory();
+            } else {
+                document.getElementById("adminAccountInput").value = ""; 
+                document.getElementById("adminPasswordInput").value = "";
+                document.getElementById("loginModal").style.display = "flex";
+                document.getElementById("adminAccountInput").focus();
+            }
+        } else {
+            document.getElementById("adminPage").classList.remove("active");
+            document.getElementById("studentPage").classList.add("active");
+            document.getElementById("navToggleBtn").innerText = "管理後台";
+            currentPage = "student";
+        }
+    }
+
+    function closeLoginModal() { document.getElementById("loginModal").style.display = "none"; }
+
+    async function saveAccountWhitelist() {
+        const inputStr = document.getElementById("whitelistInput").value.trim();
+        let accounts = [];
+        if (inputStr) accounts = inputStr.split(",").map(e => e.trim()).filter(e => e !== "");
+        
+        try {
+            await fetch(`${FIREBASE_URL}/settings/accounts_large.json`, { method: 'PUT', body: JSON.stringify(accounts) });
+            alert("✅ 管理員白名單更新成功！");
+        } catch(e) { alert("更新失敗，請檢查網路連線。"); }
+    }
+
+    async function changeAdminPassword() {
+        const newPwd = document.getElementById("newPasswordInput").value.trim();
+        if (!newPwd) { alert("密碼不可為空！"); return; }
+        if (confirm(`確定要將大型教室的密碼修改為「${newPwd}」嗎？`)) {
+            adminPassword = newPwd;
+            try {
+                await fetch(`${FIREBASE_URL}/settings/pwd_large.json`, { method: 'PUT', body: JSON.stringify(newPwd) });
+                document.getElementById("newPasswordInput").value = "";
+                alert("密碼修改成功！所有裝置已即時同步生效。");
+            } catch(e) { alert("密碼同步失敗，請檢查網路。"); }
+        }
+    }
+
+    async function submitLogin() {
+        const accountInput = document.getElementById("adminAccountInput");
+        const inputPwd = document.getElementById("adminPasswordInput").value;
+        
+        if (!accountInput.value.trim()) { alert("請輸入管理者帳號！"); return; }
+        
+        let allowedAccounts = [];
+        try {
+            const accRes = await fetch(`${FIREBASE_URL}/settings/accounts_large.json?t=${new Date().getTime()}`, { cache: "no-store" });
+            allowedAccounts = await accRes.json() || [];
+            
+            if (allowedAccounts.length > 0 && !allowedAccounts.includes(accountInput.value.trim())) {
+                alert("⛔ 登入失敗！此帳號不在管理員白名單內。");
+                return;
+            }
+        } catch(e) { console.error("無法核對白名單"); }
+
+        try {
+            const pwdRes = await fetch(`${FIREBASE_URL}/settings/pwd_large.json?t=${new Date().getTime()}`, { cache: "no-store" });
+            const pwdData = await pwdRes.json();
+            if (pwdData) adminPassword = pwdData;
+        } catch(e) { console.error("無法連線至雲端核對密碼"); }
+
+        if (inputPwd === adminPassword) {
+            sessionStorage.setItem("isAdminAuthed_large", "true");
+            closeLoginModal();
+            document.getElementById("whitelistInput").value = allowedAccounts.join(", ");
+            openLoginModal(); 
+        } else {
+            alert("密碼錯誤！");
+        }
+    }
+
+    function renderSeatsGrid() {
+        document.getElementById("displayClassHeader").innerText = classHeaderTitle;
+        const table = document.getElementById("classroomSeats");
+        let html = "";
+
+        const myBookedSeat = localStorage.getItem(`mySeat_large_${currentClassID}`);
+        const isBackend = (currentPage === "admin");
+
+        let startCol = 1;
+        let endCol = TOTAL_COLS;
+
+        if (currentZone === 'left') {
+            startCol = 1;
+            endCol = 9;
+        } else if (currentZone === 'right') {
+            startCol = 10;
+            endCol = 18;
+        }
+
+        for (let row = 1; row <= TOTAL_ROWS; row++) {
+            html += "<tr>";
+            for (let col = startCol; col <= endCol; col++) {
+                
+                const seatCode = `${row}-${col}`;
+                const name = studentFilledData[seatCode];
+                const isMySeat = (seatCode === myBookedSeat);
+                
+                if (name) {
+                    let tdClass = isMySeat ? "booked my-seat" : "booked";
+                    if (isVerifyVisualOn) { tdClass = officialRoster.includes(name) ? "verified-match" : "verified-error"; }
+                    let displayName = (!isBackend && !isMySeat) ? maskName(name) : name;
+                    
+                    html += `<td class="${tdClass}" onclick="handleSeatClick('${seatCode}')"><span class="seat-num">${seatCode}</span><br><span class="seat-name">${displayName}</span></td>`;
+                } else {
+                    html += `<td onclick="handleSeatClick('${seatCode}')"><span class="seat-num-empty">${seatCode}</span></td>`;
+                }
+
+                if (currentZone === 'all' && col === 9) {
+                    html += `<td class="aisle"></td>`;
+                }
+            }
+            html += "</tr>";
+        }
+        table.innerHTML = html;
+    }
+
+    async function processRosterText() {
+        const text = document.getElementById("rawRosterInput").value;
+        if (!text.trim()) { alert("請貼入內容！"); return; }
+
+        try {
+            let classCode = "000000"; let className = "新研習班期";
+            const codeMatch = text.match(/(\d{6})[「"']?([^「」"'\s]+)[開班]?[」"']?/);
+            if (codeMatch) { classCode = codeMatch[1]; className = `「${codeMatch[2]}」`; }
+
+            const today = new Date();
+            const formattedDate = `${today.getFullYear()}.${String(today.getMonth()+1).padStart(2,'0')}.${String(today.getDate()).padStart(2,'0')}`;
+
+            currentClassID = classCode;
+            classHeaderTitle = `${classCode}${className}-${formattedDate}`;
+
+            const extractedNames = [];
+            const nameRegex = /^(?=.*[\u4e00-\u9fa5a-zA-Z0-9]).{2,8}$/;
+            const excludeHeaders = ["姓名", "座號", "機關", "機關學校", "職稱", "單位", "備註", "受訓日期", "簽到", "備註欄"];
+            const tokens = text.split(/[\s\t\n\r,，、]+/);
+
+            let buffer = [];
+            for (let i = 0; i < tokens.length; i++) {
+                const token = tokens[i].trim();
+                if (!token) continue;
+                if (/^\d+$/.test(token)) {
+                    if (buffer.length > 0) {
+                        const possibleName = buffer[buffer.length - 1];
+                        if (nameRegex.test(possibleName) && !excludeHeaders.includes(possibleName)) extractedNames.push(possibleName);
+                    }
+                    buffer = []; 
+                } else { buffer.push(token); }
+            }
+            if (buffer.length > 0) {
+                const possibleName = buffer[buffer.length - 1];
+                if (nameRegex.test(possibleName) && !excludeHeaders.includes(possibleName)) extractedNames.push(possibleName);
+            }
+
+            officialRoster = extractedNames;
+            if (officialRoster.length === 0) { alert("未抓取到有效姓名！"); return; }
+
+            dbTitles[currentClassID] = classHeaderTitle;
+            dbRosters[currentClassID] = officialRoster;
+            localStorage.setItem("seat_db_titles_large", JSON.stringify(dbTitles));
+            localStorage.setItem("seat_db_rosters_large", JSON.stringify(dbRosters));
+
+            await fetch(`${FIREBASE_URL}/room_large/${currentClassID}/title.json`, { method: 'PUT', body: JSON.stringify(classHeaderTitle) });
+            await fetch(`${FIREBASE_URL}/room_large/${currentClassID}/roster.json`, { method: 'PUT', body: JSON.stringify(officialRoster) });
+
+            alert(`【開班成功】\n匯入 ${officialRoster.length} 名學員！`);
+            window.location.replace(`?class=${currentClassID}`);
+        } catch (err) { alert("解析錯誤"); }
+    }
+
+    async function clearCurrentClassData() {
+        if (!currentClassID || !confirm("⚠️ 確定徹底清除資料嗎？無法復原！")) return;
+        await fetch(`${FIREBASE_URL}/room_large/${currentClassID}.json`, { method: 'DELETE' });
+        delete dbTitles[currentClassID]; delete dbRosters[currentClassID];
+        localStorage.setItem("seat_db_titles_large", JSON.stringify(dbTitles));
+        localStorage.setItem("seat_db_rosters_large", JSON.stringify(dbRosters));
+        localStorage.removeItem(`mySeat_large_${currentClassID}`); 
+        alert("資料已徹底清除！");
+        window.location.replace(window.location.pathname);
+    }
+
+    function handleSeatClick(seatCode) {
+        if (!currentClassID) { alert("請先由後台載入班期！"); return; }
+        activeSeatId = seatCode;
+        const existingName = studentFilledData[seatCode] || "";
+        const myBookedSeat = localStorage.getItem(`mySeat_large_${currentClassID}`); 
+        const isBackend = (currentPage === "admin"); 
+
+        if (!isBackend && existingName && myBookedSeat !== seatCode) return; 
+        
+        document.getElementById("targetSeatLabel").innerText = `座位 ${seatCode}`;
+        document.getElementById("studentName").value = existingName;
+        
+        if (existingName) {
+            document.getElementById("studentName").disabled = true; 
+            document.getElementById("btnSubmitSeat").style.display = "none"; 
+            if (myBookedSeat === seatCode) {
+                document.getElementById("btnCancelSeat").style.display = "inline-block";
+                document.getElementById("inputLabelText").innerText = "這是您登記的座位：";
+            }
+        } else {
+            document.getElementById("btnCancelSeat").style.display = "none";
+            document.getElementById("inputLabelText").innerText = "請填寫真實姓名：";
+            document.getElementById("studentName").disabled = false;
+            document.getElementById("btnSubmitSeat").style.display = "inline-block";
+        }
+        document.getElementById("seatModal").style.display = "flex";
+    }
+
+    function closeSelectModal() { document.getElementById("seatModal").style.display = "none"; }
+
+    async function clearCurrentSeat() {
+        if (confirm(`確定取消座位嗎？`)) {
+            delete studentFilledData[activeSeatId];
+            localStorage.removeItem(`mySeat_large_${currentClassID}`); 
+            renderSeatsGrid(); closeSelectModal();
+            await updateCloudSeat(activeSeatId, null);
+        }
+    }
+
+    async function saveStudentSeat() {
+        const name = escapeHTML(document.getElementById("studentName").value.trim()); 
+        if (!name) { alert("請輸入姓名！"); return; }
+
+        const myBookedSeat = localStorage.getItem(`mySeat_large_${currentClassID}`);
+        if (myBookedSeat && myBookedSeat !== activeSeatId) { alert("每人限選一位！"); return; }
+
+        studentFilledData[activeSeatId] = name;
+        localStorage.setItem(`mySeat_large_${currentClassID}`, activeSeatId); 
+        renderSeatsGrid(); closeSelectModal();
+        await updateCloudSeat(activeSeatId, name);
+    }
+
+    async function adminForceAssignSeat() {
+        const seatId = document.getElementById("modSeatId").value.trim();
+        const studentName = escapeHTML(document.getElementById("modStudentName").value.trim()); 
+        if (!seatId || !studentName) { alert("請輸入完整資料！"); return; }
+        studentFilledData[seatId] = studentName;
+        if(currentZone !== 'none') renderSeatsGrid();
+        await updateCloudSeat(seatId, studentName);
+        alert(`已強制寫入座位 ${seatId}`);
+    }
+
+    async function adminForceClearSeat() {
+        const seatId = document.getElementById("modSeatId").value.trim();
+        if (!seatId) return;
+        delete studentFilledData[seatId];
+        if(currentZone !== 'none') renderSeatsGrid();
+        await updateCloudSeat(seatId, null);
+        alert(`已強制清除座位 ${seatId}`);
+    }
+
+    function verifyFilledSeats() {
+        isVerifyVisualOn = true;
+        if(currentZone !== 'none') renderSeatsGrid(); 
+
+        const filledNames = Object.values(studentFilledData);
+        let matchCount = 0; let errorNames = [];
+        let rosterCheckList = [...officialRoster]; 
+
+        filledNames.forEach(name => {
+            const idx = rosterCheckList.indexOf(name);
+            if (idx !== -1) { matchCount++; rosterCheckList.splice(idx, 1); }
+            else errorNames.push(name);
+        });
+
+        const missing = rosterCheckList;
+        document.getElementById("adminReport").style.display = "block";
+        document.getElementById("adminReport").innerHTML = `
+            <strong>📊 核實對比報告：</strong><br>
+            • 應到人數：${officialRoster.length} | 已填：${filledNames.length}<br>
+            • <span style="color:green;">符合名冊：${matchCount} 人</span><br>
+            • <span style="color:red;">不符/外人：${errorNames.length} 人 ${errorNames.length>0 ? `[${errorNames.join('、')}]` : ''}</span><br>
+            • <span>未選位：${missing.length} 人 ${missing.length>0 ? `[${missing.join('、')}]` : ''}</span>
+        `;
+    }
+
+    function clearVerificationStatus() {
+        isVerifyVisualOn = false;
+        document.getElementById("adminReport").style.display = "none";
+        if(currentZone !== 'none') renderSeatsGrid();
+    }
+
+    function exportCurrentClassSeats() {
+        switchZone('all'); 
+        setTimeout(() => { window.print(); }, 500);
+    }
+
+    window.onload = async function() {
+        try {
+            const pwdRes = await fetch(`${FIREBASE_URL}/settings/pwd_large.json?t=${new Date().getTime()}`);
+            const pwdData = await pwdRes.json();
+            if (pwdData) adminPassword = pwdData;
+        } catch(e) {}
+
+        if (currentClassID) {
+            try {
+                const tRes = await fetch(`${FIREBASE_URL}/room_large/${currentClassID}/title.json`);
+                const tData = await tRes.json();
+                if(tData === null) {
+                    localStorage.removeItem(`mySeat_large_${currentClassID}`);
+                    window.location.replace(window.location.pathname); return; 
+                } else classHeaderTitle = tData;
+            } catch(e){}
+
+            try {
+                const rRes = await fetch(`${FIREBASE_URL}/room_large/${currentClassID}/roster.json`);
+                const rData = await rRes.json();
+                if(rData) officialRoster = rData;
+            } catch(e){}
+            
+            document.getElementById("displayClassHeader").innerText = classHeaderTitle;
+            startRealtimeSync();
+
+            document.getElementById("qrcodeWrapper").style.display = "block";
+            new QRCode(document.getElementById("qrcode"), {
+                text: window.location.href, width: 200, height: 200
+            });
+
+            if (sessionStorage.getItem("isAdminAuthed_large") === "true") {
+                switchZone('all');
+                
+                try {
+                    const accRes = await fetch(`${FIREBASE_URL}/settings/accounts_large.json?t=${new Date().getTime()}`);
+                    const allowedAccounts = await accRes.json() || [];
+                    document.getElementById("whitelistInput").value = allowedAccounts.join(", ");
+                } catch(e) {}
+                
+                openLoginModal(); 
+            }
+        }
+    };
+</script>
+</body>
+</html>
