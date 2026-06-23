@@ -334,7 +334,7 @@
 
     function startRealtimeSync() {
         if (!currentClassID) return;
-        const syncUrl = `${FIREBASE_URL}/room_large/${currentClassID}/seats.json`;
+        const syncUrl = `${FIREBASE_URL}/room_rich/${currentClassID}/seats.json`;
         const eventSource = new EventSource(syncUrl);
 
         eventSource.onmessage = function(event) {
@@ -363,7 +363,7 @@
     async function fetchSeatsDataLegacy() {
         if (!currentClassID) return;
         try {
-            const res = await fetch(`${FIREBASE_URL}/room_large/${currentClassID}/seats.json`);
+            const res = await fetch(`${FIREBASE_URL}/room_rich/${currentClassID}/seats.json`);
             studentFilledData = await res.json() || {};
             if(currentZone !== 'none') renderSeatsGrid();
         } catch(e) {}
@@ -372,7 +372,7 @@
     async function updateCloudSeat(seatId, name) {
         if (!currentClassID) return true;
         try {
-            let url = `${FIREBASE_URL}/room_large/${currentClassID}/seats/${seatId}.json`;
+            let url = `${FIREBASE_URL}/room_rich/${currentClassID}/seats/${seatId}.json`;
             if (name === null) await fetch(url, { method: 'DELETE' });
             else await fetch(url, { method: 'PUT', body: JSON.stringify(name) });
             return true;
@@ -551,8 +551,8 @@
             localStorage.setItem("seat_db_titles_large", JSON.stringify(dbTitles));
             localStorage.setItem("seat_db_rosters_large", JSON.stringify(dbRosters));
 
-            await fetch(`${FIREBASE_URL}/room_large/${currentClassID}/title.json`, { method: 'PUT', body: JSON.stringify(classHeaderTitle) });
-            await fetch(`${FIREBASE_URL}/room_large/${currentClassID}/roster.json`, { method: 'PUT', body: JSON.stringify(officialRoster) });
+            await fetch(`${FIREBASE_URL}/room_rich/${currentClassID}/title.json`, { method: 'PUT', body: JSON.stringify(classHeaderTitle) });
+            await fetch(`${FIREBASE_URL}/room_rich/${currentClassID}/roster.json`, { method: 'PUT', body: JSON.stringify(officialRoster) });
 
             alert(`【開班成功】\n匯入 ${officialRoster.length} 名學員！`);
             window.location.replace(`?class=${currentClassID}`);
@@ -561,7 +561,7 @@
 
     async function clearCurrentClassData() {
         if (!currentClassID || !confirm("⚠️ 確定徹底清除資料嗎？無法復原！")) return;
-        await fetch(`${FIREBASE_URL}/room_large/${currentClassID}.json`, { method: 'DELETE' });
+        await fetch(`${FIREBASE_URL}/room_rich/${currentClassID}.json`, { method: 'DELETE' });
         delete dbTitles[currentClassID]; delete dbRosters[currentClassID];
         localStorage.setItem("seat_db_titles_large", JSON.stringify(dbTitles));
         localStorage.setItem("seat_db_rosters_large", JSON.stringify(dbRosters));
@@ -686,7 +686,7 @@
 
         if (currentClassID) {
             try {
-                const tRes = await fetch(`${FIREBASE_URL}/room_large/${currentClassID}/title.json`);
+                const tRes = await fetch(`${FIREBASE_URL}/room_rich/${currentClassID}/title.json`);
                 const tData = await tRes.json();
                 if(tData === null) {
                     localStorage.removeItem(`mySeat_large_${currentClassID}`);
@@ -695,7 +695,7 @@
             } catch(e){}
 
             try {
-                const rRes = await fetch(`${FIREBASE_URL}/room_large/${currentClassID}/roster.json`);
+                const rRes = await fetch(`${FIREBASE_URL}/room_rich/${currentClassID}/roster.json`);
                 const rData = await rRes.json();
                 if(rData) officialRoster = rData;
             } catch(e){}
