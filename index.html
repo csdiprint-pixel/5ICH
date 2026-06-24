@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <title>國際廳線上即時選位與核實系統</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
@@ -45,8 +45,8 @@
         .zone-tab.active { background: var(--primary-blue); color: #fff; }
 
         /* 教室網格與包裝 */
-        .classroom-grid { display: block; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding-bottom: 30px; width: 100%; text-align: center; white-space: nowrap; }
-        .grid-wrapper { display: inline-block; position: relative; text-align: center; min-width: 100%; }
+        .classroom-grid { display: block; overflow-x: auto; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 30px; width: 100%; text-align: center; white-space: nowrap; }
+        .grid-wrapper { display: inline-block; position: relative; text-align: center; min-width: 100%; transform-origin: top center; }
         
         .stage-area { display: flex; justify-content: center; align-items: center; margin: 15px auto 30px auto; }
         .stage-box { border: 2px solid var(--border-color); padding: 12px 40px; font-size: 22px; font-weight: bold; background: #f2f2f2; border-radius: 4px; }
@@ -106,7 +106,14 @@
             .seat-num { font-size: 18px !important; }
             .seat-name { font-size: 14px !important; }
             .seat-table td.aisle { background: #e2e8f0 !important; border: none; }
+            .grid-wrapper { zoom: 1 !important; transform: none !important; }
         }
+
+        /* 手機螢幕等比例縮放配適 (一眼看到，並且支援後續雙指縮放) */
+        @media (max-width: 375px) { .grid-wrapper { zoom: 0.35 !important; } }
+        @media (min-width: 376px) and (max-width: 414px) { .grid-wrapper { zoom: 0.38 !important; } }
+        @media (min-width: 415px) and (max-width: 440px) { .grid-wrapper { zoom: 0.42 !important; } }
+        @media (min-width: 441px) and (max-width: 768px) { .grid-wrapper { zoom: 0.60 !important; } }
     </style>
 </head>
 <body>
@@ -141,7 +148,7 @@
                     <div class="zone-tab" id="tab-all" onclick="switchZone('all')">顯示全區(1~18)</div>
                 </div>
 
-                <div class="scroll-hint" id="scrollHint">⇿ 畫面可左右滑動查看完整座位 ⇿</div>
+                <div class="scroll-hint" id="scrollHint">⇿ 畫面可雙指縮放及左右滑動查看 ⇿</div>
 
                 <div class="classroom-grid">
                     <div class="grid-wrapper">
@@ -168,7 +175,7 @@
             
             <div class="form-group">
                 <label>【步驟一】請複製 Word 名冊內的「所有文字」並貼在下方：</label>
-                <textarea id="rawRosterInput" rows="5" placeholder="請在 Word 檔案中全選複製，貼上至此..."></textarea>
+                <textarea id="rawRosterInput" rows="5" placeholder="請在 Word 檔案中按 Ctrl+A 全選、Ctrl+C 複製，然後直接在此貼上..."></textarea>
             </div>
 
             <button class="btn-admin-act btn-blue" onclick="processRosterText()">【步驟二】一鍵解析並啟動新班期</button>
@@ -308,7 +315,8 @@
         if (zone === 'all') {
             document.getElementById("scrollHint").style.display = "block";
         } else {
-            document.getElementById("scrollHint").style.display = "none";
+            // 由於支援縮放，在分區時也顯示提示文字讓學員知道可以操作
+            document.getElementById("scrollHint").style.display = "block";
         }
 
         renderSeatsGrid();
@@ -506,45 +514,61 @@
         table.innerHTML = html;
     }
 
+    // ★ 更新：精準名冊解析與同名同姓支援 (對齊 102 與 ROSE)
     async function processRosterText() {
         const text = document.getElementById("rawRosterInput").value;
-        if (!text.trim()) { alert("請貼入內容！"); return; }
+        if (!text.trim()) { alert("請先貼入名冊文字內容！"); return; }
 
         try {
             let classCode = "000000"; let className = "新研習班期";
             const codeMatch = text.match(/(\d{6})[「"']?([^「」"'\s]+)[開班]?[」"']?/);
             if (codeMatch) { classCode = codeMatch[1]; className = `「${codeMatch[2]}」`; }
 
-            const today = new Date();
-            const formattedDate = `${today.getFullYear()}.${String(today.getMonth()+1).padStart(2,'0')}.${String(today.getDate()).padStart(2,'0')}`;
+            let formattedDate = "";
+            const dateMatch = text.match(/受訓日期：(\d+)年(\d+)月(\d+)日/);
+            if (dateMatch) {
+                const westernYear = parseInt(dateMatch[1]) + 1911;
+                formattedDate = `${westernYear}.${dateMatch[2].padStart(2,'0')}.${dateMatch[3].padStart(2,'0')}`;
+            } else {
+                const today = new Date();
+                formattedDate = `${today.getFullYear()}.${String(today.getMonth()+1).padStart(2,'0')}.${String(today.getDate()).padStart(2,'0')}`;
+            }
 
             currentClassID = classCode;
             classHeaderTitle = `${classCode}${className}-${formattedDate}`;
 
             const extractedNames = [];
             const nameRegex = /^(?=.*[\u4e00-\u9fa5a-zA-Z0-9]).{2,8}$/;
-            const excludeHeaders = ["姓名", "座號", "機關", "機關學校", "職稱", "單位", "備註", "受訓日期", "簽到", "備註欄"];
+            const excludeHeaders = ["姓名", "座號", "機關", "機關學校", "職稱", "單位", "備註", "受訓日期", "簽到", "備註欄", "報到簽名", "簽到欄"];
             const tokens = text.split(/[\s\t\n\r,，、]+/);
 
             let buffer = [];
             for (let i = 0; i < tokens.length; i++) {
                 const token = tokens[i].trim();
                 if (!token) continue;
+
                 if (/^\d+$/.test(token)) {
                     if (buffer.length > 0) {
                         const possibleName = buffer[buffer.length - 1];
-                        if (nameRegex.test(possibleName) && !excludeHeaders.includes(possibleName)) extractedNames.push(possibleName);
+                        if (nameRegex.test(possibleName) && !excludeHeaders.includes(possibleName)) {
+                            // 同名同姓者可重複 Push 進名單中，不會排除
+                            extractedNames.push(possibleName); 
+                        }
                     }
                     buffer = []; 
-                } else { buffer.push(token); }
+                } else {
+                    buffer.push(token);
+                }
             }
             if (buffer.length > 0) {
                 const possibleName = buffer[buffer.length - 1];
-                if (nameRegex.test(possibleName) && !excludeHeaders.includes(possibleName)) extractedNames.push(possibleName);
+                if (nameRegex.test(possibleName) && !excludeHeaders.includes(possibleName)) {
+                    extractedNames.push(possibleName);
+                }
             }
 
             officialRoster = extractedNames;
-            if (officialRoster.length === 0) { alert("未抓取到有效姓名！"); return; }
+            if (officialRoster.length === 0) { alert("警告：未抓取到任何有效姓名！請確認貼上的文字包含學員姓名。"); return; }
 
             dbTitles[currentClassID] = classHeaderTitle;
             dbRosters[currentClassID] = officialRoster;
@@ -554,7 +578,7 @@
             await fetch(`${FIREBASE_URL}/room_rich/${currentClassID}/title.json`, { method: 'PUT', body: JSON.stringify(classHeaderTitle) });
             await fetch(`${FIREBASE_URL}/room_rich/${currentClassID}/roster.json`, { method: 'PUT', body: JSON.stringify(officialRoster) });
 
-            alert(`【開班成功】\n匯入 ${officialRoster.length} 名學員！`);
+            alert(`【開班成功】\n匯入 ${officialRoster.length} 名學員！（已支援同名同姓）`);
             window.location.replace(`?class=${currentClassID}`);
         } catch (err) { alert("解析錯誤"); }
     }
